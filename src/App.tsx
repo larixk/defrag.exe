@@ -3,12 +3,20 @@ import { proxy, useSnapshot } from 'valtio'
 
 const CELL = 40
 
+interface Node {
+  dx: number
+  dy: number
+  side: 'top' | 'bottom' | 'left' | 'right'
+  connectedTo?: { brickId: number; nodeIndex: number }
+}
+
 interface Brick {
   id: number
   x: number
   y: number
   width: number
   height: number
+  nodes: Node[]
 }
 
 interface Store {
@@ -23,6 +31,16 @@ function randomShape() {
   return { width, height }
 }
 
+function createBrick(id: number, x: number, y: number, width: number, height: number): Brick {
+  const nodes: Node[] = [
+    { dx: width / 2, dy: 0, side: 'top' },
+    { dx: width / 2, dy: height, side: 'bottom' },
+    { dx: 0, dy: height / 2, side: 'left' },
+    { dx: width, dy: height / 2, side: 'right' },
+  ]
+  return { id, x, y, width, height, nodes }
+}
+
 const store = proxy<Store>({
   shape: randomShape(),
   bricks: [],
@@ -35,33 +53,47 @@ function rectanglesOverlap(a: Brick, b: Brick) {
 
 function addFirstBrick() {
   if (store.bricks.length === 0) {
-    store.bricks.push({ id: store.nextId++, x: 0, y: 0, width: store.shape.width, height: store.shape.height })
+    const { width, height } = store.shape
+    store.bricks.push(createBrick(store.nextId++, 0, 0, width, height))
   }
 }
 
 function addBrick() {
   const { bricks, shape } = store
   if (bricks.length === 0) return
+
+  const openNodes: { brick: Brick; node: Node; nodeIndex: number }[] = []
+  for (const brick of bricks) {
+    brick.nodes.forEach((node, idx) => {
+      if (!node.connectedTo) openNodes.push({ brick, node, nodeIndex: idx })
+    })
+  }
+  if (openNodes.length === 0) return
+
   for (let attempt = 0; attempt < 50; attempt++) {
-    const base = bricks[Math.floor(Math.random() * bricks.length)]
-    const side = ['top', 'bottom', 'left', 'right'][Math.floor(Math.random() * 4)] as 'top' | 'bottom' | 'left' | 'right'
-    let x = base.x
-    let y = base.y
-    if (side === 'top') {
-      y = base.y - shape.height
-      x = base.x + Math.floor((base.width - shape.width) / 2)
-    } else if (side === 'bottom') {
-      y = base.y + base.height
-      x = base.x + Math.floor((base.width - shape.width) / 2)
-    } else if (side === 'left') {
-      x = base.x - shape.width
-      y = base.y + Math.floor((base.height - shape.height) / 2)
-    } else {
-      x = base.x + base.width
-      y = base.y + Math.floor((base.height - shape.height) / 2)
-    }
-    const newBrick: Brick = { id: store.nextId, x, y, width: shape.width, height: shape.height }
+    const target = openNodes[Math.floor(Math.random() * openNodes.length)]
+    const opposite: Node['side'] =
+      target.node.side === 'top'
+        ? 'bottom'
+        : target.node.side === 'bottom'
+        ? 'top'
+        : target.node.side === 'left'
+        ? 'right'
+        : 'left'
+
+    const newBrick = createBrick(store.nextId, 0, 0, shape.width, shape.height)
+    const newNodeIndex = newBrick.nodes.findIndex((n) => n.side === opposite)
+    const newNode = newBrick.nodes[newNodeIndex]
+
+    // align node positions
+    const absX = target.brick.x + target.node.dx
+    const absY = target.brick.y + target.node.dy
+    newBrick.x = absX - newNode.dx
+    newBrick.y = absY - newNode.dy
+
     if (!bricks.some((b) => rectanglesOverlap(b, newBrick))) {
+      target.node.connectedTo = { brickId: store.nextId, nodeIndex: newNodeIndex }
+      newNode.connectedTo = { brickId: target.brick.id, nodeIndex: target.nodeIndex }
       store.nextId++
       bricks.push(newBrick)
       return
@@ -73,6 +105,7 @@ export default function App() {
   const snap = useSnapshot(store)
   useEffect(() => {
     addFirstBrick()
+    for (let i = 0; i < 4; i++) addBrick()
     const handler = (e: KeyboardEvent) => {
       if (e.code === 'Space') {
         e.preventDefault()
@@ -89,7 +122,15 @@ export default function App() {
           key={b.id}
           className="brick"
           style={{ left: b.x * CELL, top: b.y * CELL, width: b.width * CELL, height: b.height * CELL }}
-        />
+        >
+          {b.nodes.map((n, i) => (
+            <div
+              key={i}
+              className="node"
+              style={{ left: n.dx * CELL, top: n.dy * CELL }}
+            />
+          ))}
+        </div>
       ))}
     </div>
   )
