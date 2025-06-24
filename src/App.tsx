@@ -112,11 +112,26 @@ export default function App() {
         addBrick()
       }
     }
+
+    const interval = setInterval(() => {
+      addBrick()
+    }, 100)
     window.addEventListener('keydown', handler)
-    return () => window.removeEventListener('keydown', handler)
+    return () => {
+      window.removeEventListener('keydown', handler)
+      clearInterval(interval)
+    }
   }, [])
   return (
-    <div className="world">
+    <div
+      className="world"
+      style={{
+        left: window.innerWidth / 2 - snap.shape.width * CELL / 2,
+        top: window.innerHeight / 2 - snap.shape.height * CELL / 2,
+        width: snap.shape.width * CELL,
+        height: snap.shape.height * CELL,
+      }}
+    >
       {snap.bricks.map((b) => (
         <div
           key={b.id}
@@ -127,7 +142,11 @@ export default function App() {
             <div
               key={i}
               className="node"
-              style={{ left: n.dx * CELL, top: n.dy * CELL }}
+              style={{
+                left: n.dx * CELL,
+                top: n.dy * CELL,
+                background: n.connectedTo ? 'black' : 'blue',
+              }}
             />
           ))}
         </div>
